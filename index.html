@@ -3,17 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/js-dos@7/dist/js-dos.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/js-dos@8.3.20/dist/js-dos.css">
   <style>html,body,#dos{height:100%;margin:0;background:#000}</style>
 </head>
 <body>
   <div id="dos"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/js-dos@7/dist/js-dos.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/js-dos@8.3.20/dist/js-dos.js"></script>
   <script>
-    // Tells js-dos where to fetch its WASM/data files
-    emulators.pathPrefix = "https://cdn.jsdelivr.net/npm/js-dos@7/dist/";
-    // Run your bundle that you exported from DOS.Zone Studio
+    emulators.pathPrefix = "https://cdn.jsdelivr.net/npm/js-dos@8.3.20/dist/";
     Dos(document.getElementById("dos")).run("./bundle.jsdos");
   </script>
 </body>
