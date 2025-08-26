@@ -3,75 +3,95 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="./js-dos/js-dos.css">
+  <title>Dangerous Dave (DOS)</title>
+
+  <!-- js-dos v8 (from docs) -->
+  <link rel="stylesheet" href="https://v8.js-dos.com/latest/js-dos.css">
   <style>
     html,body,#dos{height:100%;margin:0;background:#000}
-    /* On-screen controls */
-    .hud{position:fixed;inset:auto 0 12px 0;display:flex;justify-content:space-between;
-         padding:0 16px;pointer-events:none;z-index:50}
-    .cluster{display:grid;gap:8px;pointer-events:auto}
-    .dpad{grid-template-areas:" .  up  . " "left  . right" " . down . ";grid-auto-columns:60px}
-    .btn{grid-area:auto;min-width:60px;min-height:60px;border-radius:12px;border:1px solid #2f3a4a;
-         background:#1f2937;color:#fff;font:700 16px/1 system-ui, sans-serif;opacity:.9}
+
+    /* On-screen controls (always visible) */
+    .hud{
+      position:fixed; left:0; right:0; bottom:12px; z-index:50;
+      display:flex; justify-content:space-between; padding:0 16px;
+      pointer-events:none;
+    }
+    .cluster{display:grid; gap:8px; pointer-events:auto}
+    .dpad{
+      grid-template-areas:
+        " .    up   .  "
+        "left  .   right"
+        " .   down  .  ";
+      grid-auto-columns:70px; grid-auto-rows:70px;
+    }
+    .btn{
+      min-width:70px; min-height:70px; border-radius:14px;
+      border:1px solid #2f3a4a; background:#1f2937; color:#fff;
+      font:700 16px/1 system-ui,sans-serif; opacity:.92; cursor:pointer;
+      user-select:none; touch-action:none;
+    }
     .btn:active{opacity:1}
     .up{grid-area:up} .down{grid-area:down} .left{grid-area:left} .right{grid-area:right}
-    .act{align-items:center;display:flex;gap:8px}
+    .act{grid-auto-flow:column}
   </style>
 </head>
 <body>
   <div id="dos"></div>
 
+  <!-- HUD inside the game page so Remix rotation still works -->
   <div class="hud">
-    <!-- D-Pad -->
     <div class="cluster dpad">
       <button class="btn up"    id="k-up">▲</button>
       <button class="btn left"  id="k-left">◀</button>
       <button class="btn right" id="k-right">▶</button>
       <button class="btn down"  id="k-down">▼</button>
     </div>
-    <!-- Action buttons -->
     <div class="cluster act">
-      <button class="btn" id="k-ctrl">CTRL</button>
+      <button class="btn" id="k-ctrl">JUMP</button>
+      <button class="btn" id="k-alt">FIRE</button>
+      <button class="btn" id="k-both">J+F</button>
     </div>
   </div>
 
-  <script src="./js-dos/js-dos.js"></script>
+  <script src="https://v8.js-dos.com/latest/js-dos.js"></script>
   <script>
-    // Start js-dos v8
-    let ci = null, backlog = [];
-    const withCi = fn => ci ? fn(ci) : backlog.push(fn);
+    (function(){
+      // Start js-dos v8. No worker => no cross-origin worker issues.
+      let ci = null, backlog = [];
+      const withCi = fn => ci ? fn(ci) : backlog.push(fn);
 
-    Dos(document.getElementById("dos"), {
-      url: "./bundle.jsdos",
-      pathPrefix: "./js-dos/",   // your local runtime folder
-      autoStart: true,
-      workerThread: false,       // safe everywhere; set true if you added wdosbox.worker.js
-      onEvent: (ev, _ci) => {
-        if (ev === "ci-ready") {
-          ci = _ci;
-          backlog.forEach(f => f(ci));
-          backlog = [];
+      Dos(document.getElementById("dos"), {
+        url: "./bundle.jsdos",
+        autoStart: true,
+        workerThread: false,   // keep this false unless you host wdosbox.worker.js same-origin
+        onEvent: (ev, _ci) => {
+          if (ev === "ci-ready") {
+            ci = _ci; backlog.forEach(f => f(ci)); backlog = [];
+          }
         }
+      });
+
+      // GLFW keycodes that js-dos expects
+      const K = { LEFT:263, RIGHT:262, UP:265, DOWN:264, CTRL:341, ALT:342 };
+
+      function bind(id, codesDown, codesUp = codesDown){
+        const el = document.getElementById(id);
+        const press   = e => { e.preventDefault(); withCi(c => codesDown.forEach(k => c.sendKeyEvent(k, true))); };
+        const release = e => { e.preventDefault(); withCi(c => codesUp  .forEach(k => c.sendKeyEvent(k, false))); };
+        ["pointerdown","mousedown","touchstart"].forEach(t => el.addEventListener(t, press,   {passive:false}));
+        ["pointerup","pointercancel","mouseup","mouseleave","touchend","touchcancel"]
+          .forEach(t => el.addEventListener(t, release, {passive:false}));
       }
-    });
 
-    // GLFW key codes used by js-dos
-    const K = { LEFT:263, RIGHT:262, UP:265, DOWN:264, CTRL:341 };
+      // D-pad
+      bind("k-left",  [K.LEFT]);  bind("k-right", [K.RIGHT]);
+      bind("k-up",    [K.UP]);    bind("k-down",  [K.DOWN]);
 
-    // Bind a button to a key (press on down, release on up / leave)
-    function bindKey(btn, code) {
-      const press = e => { e.preventDefault(); withCi(ci => ci.sendKeyEvent(code, true));  };
-      const release = e => { e.preventDefault(); withCi(ci => ci.sendKeyEvent(code, false)); };
-      ["pointerdown","mousedown","touchstart"].forEach(t => btn.addEventListener(t, press, {passive:false}));
-      ["pointerup","pointercancel","mouseup","mouseleave","touchend","touchcancel"]
-        .forEach(t => btn.addEventListener(t, release, {passive:false}));
-    }
-
-    bindKey(document.getElementById("k-left"),  K.LEFT);
-    bindKey(document.getElementById("k-right"), K.RIGHT);
-    bindKey(document.getElementById("k-up"),    K.UP);
-    bindKey(document.getElementById("k-down"),  K.DOWN);
-    bindKey(document.getElementById("k-ctrl"),  K.CTRL);
+      // Actions
+      bind("k-ctrl",  [K.CTRL]);
+      bind("k-alt",   [K.ALT]);
+      bind("k-both",  [K.CTRL, K.ALT]);
+    })();
   </script>
 </body>
 </html>
