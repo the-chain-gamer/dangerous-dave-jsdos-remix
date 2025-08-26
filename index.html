@@ -61,7 +61,7 @@
       const withCi = fn => ci ? fn(ci) : backlog.push(fn);
 
       Dos(document.getElementById("dos"), {
-        url: "./bundle.jsdos",
+        url: "./bundleNEW.jsdos",
         autoStart: true,
         workerThread: false,   // keep this false unless you host wdosbox.worker.js same-origin
         onEvent: (ev, _ci) => {
