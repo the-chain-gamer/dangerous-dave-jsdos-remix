@@ -8,11 +8,13 @@
 </head>
 <body>
   <div id="dos"></div>
-
   <script src="https://cdn.jsdelivr.net/npm/js-dos@8.3.20/dist/js-dos.js"></script>
   <script>
-    emulators.pathPrefix = "https://cdn.jsdelivr.net/npm/js-dos@8.3.20/dist/";
-    Dos(document.getElementById("dos")).run("./bundle.jsdos");
+    Dos(document.getElementById("dos"), {
+      pathPrefix: "https://cdn.jsdelivr.net/npm/js-dos@8.3.20/dist/",
+      workerThread: false,              // <- run in the main thread
+      autoStart: true,                  // optional; you can also call .run(...) below
+    }).run("./bundle.jsdos");
   </script>
 </body>
 </html>
