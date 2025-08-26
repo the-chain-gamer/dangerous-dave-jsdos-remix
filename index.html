@@ -3,23 +3,75 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <!-- v8 player from the docs -->
-  <link rel="stylesheet" href="https://v8.js-dos.com/latest/js-dos.css">
-  <style>html,body,#dos{height:100%;margin:0;background:#000}</style>
+  <link rel="stylesheet" href="./js-dos/js-dos.css">
+  <style>
+    html,body,#dos{height:100%;margin:0;background:#000}
+    /* On-screen controls */
+    .hud{position:fixed;inset:auto 0 12px 0;display:flex;justify-content:space-between;
+         padding:0 16px;pointer-events:none;z-index:50}
+    .cluster{display:grid;gap:8px;pointer-events:auto}
+    .dpad{grid-template-areas:" .  up  . " "left  . right" " . down . ";grid-auto-columns:60px}
+    .btn{grid-area:auto;min-width:60px;min-height:60px;border-radius:12px;border:1px solid #2f3a4a;
+         background:#1f2937;color:#fff;font:700 16px/1 system-ui, sans-serif;opacity:.9}
+    .btn:active{opacity:1}
+    .up{grid-area:up} .down{grid-area:down} .left{grid-area:left} .right{grid-area:right}
+    .act{align-items:center;display:flex;gap:8px}
+  </style>
 </head>
 <body>
   <div id="dos"></div>
 
-  <script src="https://v8.js-dos.com/latest/js-dos.js"></script>
+  <div class="hud">
+    <!-- D-Pad -->
+    <div class="cluster dpad">
+      <button class="btn up"    id="k-up">▲</button>
+      <button class="btn left"  id="k-left">◀</button>
+      <button class="btn right" id="k-right">▶</button>
+      <button class="btn down"  id="k-down">▼</button>
+    </div>
+    <!-- Action buttons -->
+    <div class="cluster act">
+      <button class="btn" id="k-ctrl">CTRL</button>
+    </div>
+  </div>
+
+  <script src="./js-dos/js-dos.js"></script>
   <script>
-    // v8 API: Dos(element, options)
-    // (no .run() in v8)
+    // Start js-dos v8
+    let ci = null, backlog = [];
+    const withCi = fn => ci ? fn(ci) : backlog.push(fn);
+
     Dos(document.getElementById("dos"), {
-      url: "./bundle.jsdos",   // your Dave bundle
-      autoStart: true
-      // If your browser/host blocks cross-origin workers, add:
-      // workerThread: false
+      url: "./bundle.jsdos",
+      pathPrefix: "./js-dos/",   // your local runtime folder
+      autoStart: true,
+      workerThread: false,       // safe everywhere; set true if you added wdosbox.worker.js
+      onEvent: (ev, _ci) => {
+        if (ev === "ci-ready") {
+          ci = _ci;
+          backlog.forEach(f => f(ci));
+          backlog = [];
+        }
+      }
     });
+
+    // GLFW key codes used by js-dos
+    const K = { LEFT:263, RIGHT:262, UP:265, DOWN:264, CTRL:341 };
+
+    // Bind a button to a key (press on down, release on up / leave)
+    function bindKey(btn, code) {
+      const press = e => { e.preventDefault(); withCi(ci => ci.sendKeyEvent(code, true));  };
+      const release = e => { e.preventDefault(); withCi(ci => ci.sendKeyEvent(code, false)); };
+      ["pointerdown","mousedown","touchstart"].forEach(t => btn.addEventListener(t, press, {passive:false}));
+      ["pointerup","pointercancel","mouseup","mouseleave","touchend","touchcancel"]
+        .forEach(t => btn.addEventListener(t, release, {passive:false}));
+    }
+
+    bindKey(document.getElementById("k-left"),  K.LEFT);
+    bindKey(document.getElementById("k-right"), K.RIGHT);
+    bindKey(document.getElementById("k-up"),    K.UP);
+    bindKey(document.getElementById("k-down"),  K.DOWN);
+    bindKey(document.getElementById("k-ctrl"),  K.CTRL);
   </script>
 </body>
 </html>
