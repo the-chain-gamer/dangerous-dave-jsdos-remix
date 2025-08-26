@@ -3,18 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/js-dos@8.3.20/dist/js-dos.css">
+  <!-- v8 player from the docs -->
+  <link rel="stylesheet" href="https://v8.js-dos.com/latest/js-dos.css">
   <style>html,body,#dos{height:100%;margin:0;background:#000}</style>
 </head>
 <body>
   <div id="dos"></div>
-  <script src="https://cdn.jsdelivr.net/npm/js-dos@8.3.20/dist/js-dos.js"></script>
+
+  <script src="https://v8.js-dos.com/latest/js-dos.js"></script>
   <script>
+    // v8 API: Dos(element, options)
+    // (no .run() in v8)
     Dos(document.getElementById("dos"), {
-      pathPrefix: "https://cdn.jsdelivr.net/npm/js-dos@8.3.20/dist/",
-      workerThread: false,              // <- run in the main thread
-      autoStart: true,                  // optional; you can also call .run(...) below
-    }).run("./bundle.jsdos");
+      url: "./bundle.jsdos",   // your Dave bundle
+      autoStart: true
+      // If your browser/host blocks cross-origin workers, add:
+      // workerThread: false
+    });
   </script>
 </body>
 </html>
