@@ -5,19 +5,22 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Dangerous Dave (DOS)</title>
 
-  <!-- js-dos v8 (official CDN) -->
+  <!-- js-dos v8 -->
   <link rel="stylesheet" href="https://v8.js-dos.com/latest/js-dos.css">
+
+  <!-- Remix/Farcade SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@farcade/game-sdk@latest/dist/index.min.js"></script>
+
   <style>
     html, body, #dos { height: 100%; margin: 0; background: #000; }
 
-    /* Keep the HUD low so it doesn't cover gameplay */
-    .hud-left, .hud-right {
-      position: fixed; z-index: 50; pointer-events: auto;
-    }
+    /* Keep HUD low so it doesn't cover gameplay (still rotates fine in Remix) */
+    .hud-left, .hud-right { position: fixed; z-index: 50; pointer-events: auto; }
     .hud-left  { left: 12px;  bottom: calc(12px + env(safe-area-inset-bottom)); }
-    .hud-right { right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 10px; }
+    .hud-right { right: 12px; bottom: calc(12px + env(safe-area-inset-bottom));
+                 display: flex; flex-direction: column; gap: 10px; }
 
-    /* Keyboard-style D-pad: < v > on one row, ^ centered above v */
+    /* Keyboard-like arrows: < v > in one row, ^ centered above v */
     .dpad-kb {
       display: grid; gap: 8px;
       grid-template-columns: 56px 56px 56px;
@@ -30,20 +33,17 @@
       touch-action: none; user-select: none;
     }
     .btn:active { opacity: 1; }
-
-    /* grid placement */
     .up    { grid-column: 2; grid-row: 1; }
     .left  { grid-column: 1; grid-row: 2; }
     .down  { grid-column: 2; grid-row: 2; }
     .right { grid-column: 3; grid-row: 2; }
-
-    .act { min-width: 72px; }
+    .act   { min-width: 72px; }
   </style>
 </head>
 <body>
   <div id="dos"></div>
 
-  <!-- Controls (inside the game page so Remix rotation still applies) -->
+  <!-- Controls -->
   <div class="hud-left">
     <div class="dpad-kb">
       <button class="btn up"    id="k-up">▲</button>
@@ -52,7 +52,6 @@
       <button class="btn right" id="k-right">▶</button>
     </div>
   </div>
-
   <div class="hud-right">
     <button class="btn act" id="k-ctrl">CTRL</button>
     <button class="btn act" id="k-alt">ALT</button>
@@ -61,20 +60,26 @@
   <script src="https://v8.js-dos.com/latest/js-dos.js"></script>
   <script>
     (function () {
-      // Start js-dos v8 (no worker => no cross-origin Worker issues)
       let ci = null, backlog = [];
       const withCi = fn => ci ? fn(ci) : backlog.push(fn);
 
+      // Start js-dos (no Worker to avoid cross-origin issues)
       Dos(document.getElementById("dos"), {
-        url: "./bundleNEW.jsdos",      // <-- update if your bundle name differs
+        url: "./bundleNEW.jsdos",   // <-- change if your bundle name differs
         autoStart: true,
         workerThread: false,
         onEvent: (ev, _ci) => {
           if (ev === "ci-ready") {
             ci = _ci;
-            // Auto-start Dangerous Dave from the DOS prompt:
-            // If your bundle already autoexecs dave.exe, you can remove these lines.
-            ci.exec("DDAVE\\DAVE.EXE");   // or: ci.exec("CD DDAVE"); ci.exec("DAVE.EXE");
+
+            // Boot right into Dave
+            ci.exec("DDAVE\\DAVE.EXE");
+
+            // Tell Remix we're ready once DOS booted & command sent
+            // (small delay just to ensure video/audio is flowing)
+            setTimeout(() => {
+              try { window.FarcadeSDK?.singlePlayer?.actions?.ready(); } catch {}
+            }, 600);
 
             backlog.forEach(f => f(ci));
             backlog = [];
@@ -85,23 +90,54 @@
       // GLFW key codes used by js-dos
       const K = { LEFT:263, RIGHT:262, UP:265, DOWN:264, CTRL:341, ALT:342 };
 
-      function bindKey(el, code) {
-        const press   = e => { e.preventDefault(); withCi(c => c.sendKeyEvent(code, true));  };
-        const release = e => { e.preventDefault(); withCi(c => c.sendKeyEvent(code, false)); };
+      function bindKey(el, code, haptic=false) {
+        const press = e => {
+          e.preventDefault();
+          withCi(c => c.sendKeyEvent(code, true));
+          if (haptic) { try { window.FarcadeSDK.singlePlayer.actions.hapticFeedback(); } catch {} }
+        };
+        const release = e => {
+          e.preventDefault();
+          withCi(c => c.sendKeyEvent(code, false));
+        };
         ["pointerdown","mousedown","touchstart"].forEach(t => el.addEventListener(t, press,   {passive:false}));
         ["pointerup","pointercancel","mouseup","mouseleave","touchend","touchcancel"]
           .forEach(t => el.addEventListener(t, release, {passive:false}));
       }
 
-      // D-pad bindings
+      // D-pad
       bindKey(document.getElementById("k-left"),  K.LEFT);
       bindKey(document.getElementById("k-right"), K.RIGHT);
       bindKey(document.getElementById("k-up"),    K.UP);
       bindKey(document.getElementById("k-down"),  K.DOWN);
 
-      // Actions (CTRL = jump, ALT = fire)
-      bindKey(document.getElementById("k-ctrl"),  K.CTRL);
-      bindKey(document.getElementById("k-alt"),   K.ALT);
+      // Actions (with haptics)
+      bindKey(document.getElementById("k-ctrl"),  K.CTRL, true);
+      bindKey(document.getElementById("k-alt"),   K.ALT,  true);
+
+      // Handle Remix SDK events
+      // Play again -> simple restart
+      try {
+        window.FarcadeSDK.on('play_again', () => location.reload());
+      } catch {}
+
+      // Mute/unmute -> best-effort by suspending/resuming the AudioContext used by Emscripten/SDL2
+      function setMuted(isMuted){
+        // Try common locations where js-dos exposes the audio context
+        const ac = (window.Module && window.Module.SDL2 && window.Module.SDL2.audioContext)
+                   || window.__audioContext || null;
+        if (ac && typeof ac.suspend === 'function' && typeof ac.resume === 'function') {
+          if (isMuted) ac.suspend().catch(()=>{});
+          else ac.resume().catch(()=>{});
+        }
+      }
+      try {
+        window.FarcadeSDK.on('toggle_mute', (data) => setMuted(!!data.isMuted));
+      } catch {}
+
+      // Optional: call gameOver when the process exits back to DOS (if detectable)
+      // Not all builds expose stdout events; leave as a manual future improvement.
+      // try { ci.events().onProcessExit(() => window.FarcadeSDK.singlePlayer.actions.gameOver({ score: 0 })); } catch {}
     })();
   </script>
 </body>
