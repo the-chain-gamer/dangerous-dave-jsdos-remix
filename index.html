@@ -5,92 +5,103 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Dangerous Dave (DOS)</title>
 
-  <!-- js-dos v8 (from docs) -->
+  <!-- js-dos v8 (official CDN) -->
   <link rel="stylesheet" href="https://v8.js-dos.com/latest/js-dos.css">
   <style>
-    html,body,#dos{height:100%;margin:0;background:#000}
+    html, body, #dos { height: 100%; margin: 0; background: #000; }
 
-    /* On-screen controls (always visible) */
-    .hud{
-      position:fixed; left:0; right:0; bottom:12px; z-index:50;
-      display:flex; justify-content:space-between; padding:0 16px;
-      pointer-events:none;
+    /* Keep the HUD low so it doesn't cover gameplay */
+    .hud-left, .hud-right {
+      position: fixed; z-index: 50; pointer-events: auto;
     }
-    .cluster{display:grid; gap:8px; pointer-events:auto}
-    .dpad{
-      grid-template-areas:
-        " .    up   .  "
-        "left  .   right"
-        " .   down  .  ";
-      grid-auto-columns:70px; grid-auto-rows:70px;
+    .hud-left  { left: 12px;  bottom: calc(12px + env(safe-area-inset-bottom)); }
+    .hud-right { right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 10px; }
+
+    /* Keyboard-style D-pad: < v > on one row, ^ centered above v */
+    .dpad-kb {
+      display: grid; gap: 8px;
+      grid-template-columns: 56px 56px 56px;
+      grid-template-rows:    56px 56px;
     }
-    .btn{
-      min-width:70px; min-height:70px; border-radius:14px;
-      border:1px solid #2f3a4a; background:#1f2937; color:#fff;
-      font:700 16px/1 system-ui,sans-serif; opacity:.92; cursor:pointer;
-      user-select:none; touch-action:none;
+    .btn {
+      min-width: 56px; min-height: 56px; border-radius: 12px;
+      border: 1px solid #2f3a4a; background: #1f2937; color: #fff;
+      font: 700 14px/1 system-ui, sans-serif; opacity: .92; cursor: pointer;
+      touch-action: none; user-select: none;
     }
-    .btn:active{opacity:1}
-    .up{grid-area:up} .down{grid-area:down} .left{grid-area:left} .right{grid-area:right}
-    .act{grid-auto-flow:column}
+    .btn:active { opacity: 1; }
+
+    /* grid placement */
+    .up    { grid-column: 2; grid-row: 1; }
+    .left  { grid-column: 1; grid-row: 2; }
+    .down  { grid-column: 2; grid-row: 2; }
+    .right { grid-column: 3; grid-row: 2; }
+
+    .act { min-width: 72px; }
   </style>
 </head>
 <body>
   <div id="dos"></div>
 
-  <!-- HUD inside the game page so Remix rotation still works -->
-  <div class="hud">
-    <div class="cluster dpad">
+  <!-- Controls (inside the game page so Remix rotation still applies) -->
+  <div class="hud-left">
+    <div class="dpad-kb">
       <button class="btn up"    id="k-up">▲</button>
       <button class="btn left"  id="k-left">◀</button>
-      <button class="btn right" id="k-right">▶</button>
       <button class="btn down"  id="k-down">▼</button>
+      <button class="btn right" id="k-right">▶</button>
     </div>
-    <div class="cluster act">
-      <button class="btn" id="k-ctrl">JUMP</button>
-      <button class="btn" id="k-alt">FIRE</button>
-      <button class="btn" id="k-both">J+F</button>
-    </div>
+  </div>
+
+  <div class="hud-right">
+    <button class="btn act" id="k-ctrl">CTRL</button>
+    <button class="btn act" id="k-alt">ALT</button>
   </div>
 
   <script src="https://v8.js-dos.com/latest/js-dos.js"></script>
   <script>
-    (function(){
-      // Start js-dos v8. No worker => no cross-origin worker issues.
+    (function () {
+      // Start js-dos v8 (no worker => no cross-origin Worker issues)
       let ci = null, backlog = [];
       const withCi = fn => ci ? fn(ci) : backlog.push(fn);
 
       Dos(document.getElementById("dos"), {
-        url: "./bundleNEW.jsdos",
+        url: "./bundleNEW.jsdos",      // <-- update if your bundle name differs
         autoStart: true,
-        workerThread: false,   // keep this false unless you host wdosbox.worker.js same-origin
+        workerThread: false,
         onEvent: (ev, _ci) => {
           if (ev === "ci-ready") {
-            ci = _ci; backlog.forEach(f => f(ci)); backlog = [];
+            ci = _ci;
+            // Auto-start Dangerous Dave from the DOS prompt:
+            // If your bundle already autoexecs dave.exe, you can remove these lines.
+            ci.exec("DDAVE\\DAVE.EXE");   // or: ci.exec("CD DDAVE"); ci.exec("DAVE.EXE");
+
+            backlog.forEach(f => f(ci));
+            backlog = [];
           }
         }
       });
 
-      // GLFW keycodes that js-dos expects
+      // GLFW key codes used by js-dos
       const K = { LEFT:263, RIGHT:262, UP:265, DOWN:264, CTRL:341, ALT:342 };
 
-      function bind(id, codesDown, codesUp = codesDown){
-        const el = document.getElementById(id);
-        const press   = e => { e.preventDefault(); withCi(c => codesDown.forEach(k => c.sendKeyEvent(k, true))); };
-        const release = e => { e.preventDefault(); withCi(c => codesUp  .forEach(k => c.sendKeyEvent(k, false))); };
+      function bindKey(el, code) {
+        const press   = e => { e.preventDefault(); withCi(c => c.sendKeyEvent(code, true));  };
+        const release = e => { e.preventDefault(); withCi(c => c.sendKeyEvent(code, false)); };
         ["pointerdown","mousedown","touchstart"].forEach(t => el.addEventListener(t, press,   {passive:false}));
         ["pointerup","pointercancel","mouseup","mouseleave","touchend","touchcancel"]
           .forEach(t => el.addEventListener(t, release, {passive:false}));
       }
 
-      // D-pad
-      bind("k-left",  [K.LEFT]);  bind("k-right", [K.RIGHT]);
-      bind("k-up",    [K.UP]);    bind("k-down",  [K.DOWN]);
+      // D-pad bindings
+      bindKey(document.getElementById("k-left"),  K.LEFT);
+      bindKey(document.getElementById("k-right"), K.RIGHT);
+      bindKey(document.getElementById("k-up"),    K.UP);
+      bindKey(document.getElementById("k-down"),  K.DOWN);
 
-      // Actions
-      bind("k-ctrl",  [K.CTRL]);
-      bind("k-alt",   [K.ALT]);
-      bind("k-both",  [K.CTRL, K.ALT]);
+      // Actions (CTRL = jump, ALT = fire)
+      bindKey(document.getElementById("k-ctrl"),  K.CTRL);
+      bindKey(document.getElementById("k-alt"),   K.ALT);
     })();
   </script>
 </body>
