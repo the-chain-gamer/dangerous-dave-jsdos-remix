@@ -5,14 +5,19 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Dangerous Dave (DOS)</title>
 
-  <!-- js-dos v8 -->
-  <link rel="stylesheet" href="https://v8.js-dos.com/latest/js-dos.css">
-
-  <!-- Farcade SDK (must be inside the game page, not just the Remix wrapper) -->
+  <!-- Farcade SDK (lives inside the game page) -->
   <script src="https://cdn.jsdelivr.net/npm/@farcade/game-sdk@latest/dist/index.min.js"></script>
 
   <style>
     html, body, #dos { height: 100%; margin: 0; background: #000; }
+
+    /* Status overlay for diagnostics */
+    #status {
+      position: fixed; left: 8px; top: 8px; z-index: 60;
+      background: rgba(20,20,20,.7); color: #fff; font: 12px/1.4 system-ui, sans-serif;
+      padding: 6px 8px; border-radius: 8px; max-width: 60vw; pointer-events: none;
+      white-space: pre-wrap;
+    }
 
     /* Controls low on screen so they don't cover gameplay */
     .hud-left, .hud-right { position: fixed; z-index: 50; pointer-events: auto; }
@@ -43,7 +48,10 @@
 <body>
   <div id="dos"></div>
 
-  <!-- On-screen controls -->
+  <!-- Status log (auto-hides on success) -->
+  <div id="status">loading…</div>
+
+  <!-- HUD -->
   <div class="hud-left">
     <div class="dpad-kb">
       <button class="btn up"    id="k-up">▲</button>
@@ -57,13 +65,141 @@
     <button class="btn act" id="k-alt">ALT</button>
   </div>
 
-  <script src="https://v8.js-dos.com/latest/js-dos.js"></script>
   <script>
-    (function () {
-      // --- Utils -------------------------------------------------------------
+    (async function () {
+      // ---------- tiny logger shown on screen ----------
+      const $s = document.getElementById('status');
+      const log = (m) => { $s.textContent = `[dave] ${m}`; console.log('[dave]', m); };
+      const hideStatus = () => { $s.style.display = 'none'; };
+
+      // ---------- SDK helpers ----------
       const SDK = () => window.FarcadeSDK?.singlePlayer?.actions;
       const hasSDK = () => !!SDK();
-      const safe = (fn) => { try { fn && fn(); } catch (e) {} };
-      const log  = (...a) => console.log("[dave]", ...a);
+      const safe = (fn) => { try { fn && fn(); } catch {} };
 
-      // Attempt to mute/unmute by suspending/resuming the Aud
+      function setMuted(isMuted){
+        const ac = (window.Module?.SDL2?.audioContext) || window.__audioContext;
+        if (ac?.suspend && ac?.resume) (isMuted ? ac.suspend() : ac.resume()).catch(()=>{});
+      }
+
+      // ---------- 1) Choose bundle ----------
+      const candidates = ["./bundleNEW.jsdos", "./bundle.jsdos"];
+      async function chooseBundle() {
+        for (const u of candidates) {
+          try {
+            const r = await fetch(u, { method: "HEAD", cache: "no-store" });
+            if (r.ok) return u;
+          } catch {}
+        }
+        return null;
+      }
+      const bundleUrl = await chooseBundle();
+      if (!bundleUrl) {
+        log(`No .jsdos bundle found. Tried: ${candidates.join(', ')}`);
+        return;
+      }
+      log(`bundle: ${bundleUrl}`);
+
+      // ---------- 2) Load js-dos (with CDN fallback) ----------
+      async function loadJsDos() {
+        const CSS = [
+          "https://v8.js-dos.com/latest/js-dos.css",
+          "https://cdn.jsdelivr.net/npm/js-dos@8.3.20/dist/js-dos.css",
+        ];
+        const JS = [
+          "https://v8.js-dos.com/latest/js-dos.js",
+          "https://cdn.jsdelivr.net/npm/js-dos@8.3.20/dist/js-dos.js",
+        ];
+
+        // load CSS first (best effort)
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = CSS[0];
+        link.onerror = () => { link.href = CSS[1]; };
+        document.head.appendChild(link);
+
+        // then JS with fallback
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = JS[0];
+          s.onload = resolve;
+          s.onerror = () => {
+            const s2 = document.createElement('script');
+            s2.src = JS[1];
+            s2.onload = resolve;
+            s2.onerror = reject;
+            document.head.appendChild(s2);
+          };
+          document.head.appendChild(s);
+        });
+        if (typeof window.Dos !== 'function') throw new Error('Dos() not available');
+      }
+
+      try {
+        log('loading js-dos…');
+        await loadJsDos();
+      } catch (e) {
+        log(`Failed to load js-dos: ${e.message}`);
+        return;
+      }
+
+      // ---------- 3) Start emulator ----------
+      let ci = null, backlog = [];
+      const withCi = fn => ci ? fn(ci) : backlog.push(fn);
+
+      try {
+        log('starting emulator…');
+        window.Dos(document.getElementById("dos"), {
+          url: bundleUrl,
+          autoStart: true,
+          workerThread: false, // no cross-origin worker
+          onEvent: (ev, _ci) => {
+            if (ev === "ci-ready") {
+              ci = _ci;
+
+              // Boot straight into the game (adjust if needed)
+              ci.exec("DDAVE\\DAVE.EXE");
+
+              setTimeout(() => {
+                hideStatus();
+                if (hasSDK()) safe(() => SDK().ready());
+              }, 700);
+
+              backlog.forEach(f => f(ci)); backlog = [];
+            }
+          }
+        });
+      } catch (e) {
+        log(`Failed to start emulator: ${e.message}`);
+        return;
+      }
+
+      // ---------- 4) Controls + haptics ----------
+      const K = { LEFT:263, RIGHT:262, UP:265, DOWN:264, CTRL:341, ALT:342 };
+      function bindKey(id, code, haptic=false) {
+        const el = document.getElementById(id);
+        const down = e => { e.preventDefault(); withCi(c => c.sendKeyEvent(code, true));
+                            if (haptic && hasSDK()) safe(() => SDK().hapticFeedback()); };
+        const up   = e => { e.preventDefault(); withCi(c => c.sendKeyEvent(code, false)); };
+        ["pointerdown","mousedown","touchstart"].forEach(t => el.addEventListener(t, down, {passive:false}));
+        ["pointerup","pointercancel","mouseup","mouseleave","touchend","touchcancel"]
+          .forEach(t => el.addEventListener(t, up, {passive:false}));
+      }
+      bindKey("k-left",  K.LEFT);
+      bindKey("k-right", K.RIGHT);
+      bindKey("k-up",    K.UP);
+      bindKey("k-down",  K.DOWN);
+      bindKey("k-ctrl",  K.CTRL, true);
+      bindKey("k-alt",   K.ALT,  true);
+
+      // ---------- 5) Remix hooks ----------
+      safe(() => window.FarcadeSDK.on('play_again', () => location.reload()));
+      safe(() => window.FarcadeSDK.on('toggle_mute', (d) => setMuted(!!d.isMuted)));
+
+      // Optional helper you can call when you detect game end:
+      window.__sendGameOver = (scoreValue=0) =>
+        hasSDK() && safe(() => SDK().gameOver({ score: scoreValue }));
+    })();
+  </script>
+</body>
+</html>
